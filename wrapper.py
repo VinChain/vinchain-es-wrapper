@@ -38,9 +38,9 @@ def get_account_history():
     agg_field = request.args.get('agg_field', "operation_type")
 
     if type != "data":
-        s = Search(using=es, index="bitshares-*")
+        s = Search(using=es, index="graphene-*")
     else:
-        s = Search(using=es, index="bitshares-*", extra={"size": size, "from": from_})
+        s = Search(using=es, index="graphene-*", extra={"size": size, "from": from_})
 
     q = Q()
     if account_id and operation_type:
@@ -58,18 +58,55 @@ def get_account_history():
 
     s = s.sort(sort_by)
 
-    #print s.to_dict()
+    response = s.execute()
+    # print response.to_dict()
+    results = []
+    # print s.count()
+    if response:
+        if type == "data":
+            for hit in response:
+                results.append(hit.to_dict())
+        else:
+            for field in response.aggregations.per_field.buckets:
+                # print field.to_dict()
+                results.append(field.to_dict())
+    else:
+        print('"/get_account_history": Response is empty!!!!')
+
+    return jsonify(results)
+
+
+@app.route('/get_trxs')
+def get_trxs():
+
+    from_ = request.args.get('from_', 0)
+    size = request.args.get('size', 1)
+    from_date = request.args.get('from_date', "2015-10-10")
+    to_date = request.args.get('to_date', "now")
+    sort_by = request.args.get('sort_by', "-block_data.block_time")
+
+    s = Search(using=es, index="graphene-*", extra={"size": size, "from": from_})
+
+    q = Q()
+
+    range_query = Q("range", block_data__block_time={'gte': from_date, 'lte': to_date})
+    s.query = q & range_query
+
+    s.aggs.bucket('per_field', 'terms', field='block_data.trx_id.keyword', size=size).bucket(
+        'per_op', 'terms', field='account_history.operation_id.keyword', size=10000)
+
+    s = s.sort(sort_by)
+
+    # print('!!!! {}'.format(s.to_dict()))
 
     response = s.execute()
-    #print response
     results = []
-    #print s.count()
-    if type == "data":
-        for hit in response:
-            results.append(hit.to_dict())
-    else:
+    if response:
         for field in response.aggregations.per_field.buckets:
+            # print field.to_dict()
             results.append(field.to_dict())
+    else:
+        print('"/get_trxs": Response is empty!!!!')
 
     return jsonify(results)
 
@@ -79,7 +116,7 @@ def get_single_operation():
 
     operation_id = request.args.get('operation_id', "1.11.0")
 
-    s = Search(using=es, index="bitshares-*", extra={"size": 1})
+    s = Search(using=es, index="graphene-*", extra={"size": 1})
 
     q = Q("match", account_history__operation_id=operation_id)
 
@@ -98,7 +135,7 @@ def get_trx():
     from_ = request.args.get('from_', 0)
     size = request.args.get('size', 10)
 
-    s = Search(using=es, index="bitshares-*", extra={"size": size, "from": from_})
+    s = Search(using=es, index="graphene-*", extra={"size": size, "from": from_})
 
     q = Q("match", block_data__trx_id=trx)
 
@@ -106,6 +143,7 @@ def get_trx():
     response = s.execute()
     results = []
     for hit in response:
+        # print hit.to_dict()
         results.append(hit.to_dict())
 
     return jsonify(results)
